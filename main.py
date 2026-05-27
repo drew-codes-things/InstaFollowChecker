@@ -19,13 +19,10 @@ def load_following(file_path):
         data = json.load(f)
 
     usernames = {}
-    # Handle both possible structures
     items = data if isinstance(data, list) else data.get("relationships_following", [])
     for item in items:
-        # New export format: title at top level
         username = item.get("title")
         timestamp = None
-        # Also check string_list_data (some export versions use this)
         for entry in item.get("string_list_data", []):
             if entry.get("value"):
                 username = entry["value"]
@@ -83,7 +80,6 @@ def print_section(title, usernames_dict, show_date=False):
 
 
 def main():
-    # Auto-detect files
     followers_path = find_file(["followers_1.json", "followers*.json"])
     following_path = find_file(["following.json", "following*.json"])
 
@@ -123,7 +119,6 @@ def main():
     print(f"  Not following back:   {len(not_following_back)}")
     print(f"  You don't follow back:{len(not_followed_back)}")
 
-    # Optional: save not-following-back to a text file
     out_path = "not_following_back.txt"
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(f"Not following you back — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n")
