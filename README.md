@@ -1,46 +1,53 @@
-# Instagram Non-Followers Checker
+# InstaFollowChecker
 
-## Prerequisites
-- Requires Python 3.6.x+ (Recommended 3.8.x+)
-- Instagram account
-- Instagram data export (JSON format)
+A simple Python script that parses your Instagram data export and tells you who isn't following you back, who you aren't following back, and who your mutual follows are.
 
-No APIs, logins, or third-party modules required.
+No login, no API, no third-party services — it only reads the JSON files Instagram gives you directly.
 
-
-## How to use
-1. Request your Instagram data (Followers & Following)
-2. Download and extract the ZIP file
-3. Place `followers_1.json` and `following.json` in the script directory
-4. Open CMD / Terminal
-5. Point to the directory of the script
-6. Run the script by typing  
-   `python main.py` or `py main.py`
-
+---
 
 ## How to get your Instagram data
-1. Open **Instagram**
-2. Go to **Settings**
-3. Open **Accounts Centre**
-4. Select **Your information and permissions**
-5. Click **Download your information**
-6. Choose **Followers and Following**
-7. Select **JSON** format
-8. Submit request and wait for the download email
-9. Extract the files
 
+1. Open Instagram → **Settings** → **Your activity** → **Download your information**
+2. Select **Some of your information** and tick **Followers and following**
+3. Set format to **JSON**, request the download, and wait for the email
+4. Extract the ZIP — you'll find `followers_1.json` and `following.json` inside the `connections/followers_and_following/` folder
+5. Copy both files into the same folder as `main.py`
+
+---
+
+## Usage
+
+```bash
+python main.py
+```
+
+No dependencies beyond the Python standard library.
+
+---
 
 ## Output
-- Displays a list of users you follow who **do not follow you back**
-- Uses **current data only**
-- Does **not** track unfollows or past data
 
+The script prints three sections:
 
-## Issues
-If you encounter any issues, please try to gather the following information before reaching out:
--   A screenshot or screen recording of the problem.
--   Any errors shown in the browser's developer console (Press F12 → Console tab).
--   A clear, step-by-step explanation of what you did and what went wrong.
+| Section | What it means |
+|---------|---------------|
+| **Not following you back** | Accounts you follow that don't follow you |
+| **You don't follow back** | Accounts that follow you that you don't follow |
+| **Mutual follows** | Accounts where you both follow each other |
 
+A summary count is printed at the end, and the "not following back" list is also saved to `not_following_back.txt` in the same folder.
 
-Note: This script does **not** interact with Instagram directly and does **not** violate API limits or rate caps.
+Where available, the date you followed each account is shown in brackets next to the username.
+
+---
+
+## File detection
+
+The script automatically looks for `followers_1.json` and `following.json` in the current directory. If Instagram names them slightly differently in your export, rename them to match or place them in the same folder — the script will find them.
+
+---
+
+## License
+
+MIT
