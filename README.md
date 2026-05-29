@@ -1,36 +1,33 @@
 # InstaFollowChecker
 
-A Python tool that analyzes your downloaded Instagram data export to show exactly who isn't following you back.
+Python tool that analyzes your official Instagram data export to identify accounts that don't follow you back.
 
-## Features
+## Technical Details
 
-- Parses official Instagram data export files
-- Identifies non-followers (people you follow who don't follow back)
-- Clean, readable output
-- Optional export of results to CSV
+- Parses Instagram data export (JSON format)
+- Compares "following" vs "followers" lists
+- Outputs clean list of non-reciprocal accounts
+- Optional CSV export
 
-## Installation
+## File Structure
 
-```bash
-git clone https://github.com/drew-codes-things/InstaFollowChecker.git
-cd InstaFollowChecker
-pip install -r requirements.txt
+```
+InstaFollowChecker/
+├── main.py
+├── requirements.txt
+├── README.md
+└── LICENSE
 ```
 
 ## Usage
 
-1. Download your Instagram data from Instagram settings
-2. Run the script and point it to your data folder
-3. View the list of accounts that don't follow you back
-
-```bash
-python main.py
-```
+1. Download your Instagram data export
+2. Run the script and point it to the data folder
+3. View results
 
 ## Requirements
 
 - Python 3.8+
-- Your Instagram data export (JSON format)
 
 ## License
 
