@@ -7,10 +7,6 @@ import sys
 from datetime import datetime, timezone
 
 
-# ---------------------------------------------------------------------------
-# ANSI colour helpers
-# ---------------------------------------------------------------------------
-
 USE_COLOR = True
 
 RED    = "\033[91m"
@@ -22,10 +18,6 @@ RESET  = "\033[0m"
 def col(text, code):
     return f"{code}{text}{RESET}" if USE_COLOR else text
 
-
-# ---------------------------------------------------------------------------
-# File discovery
-# ---------------------------------------------------------------------------
 
 def find_file(folder, candidates):
     for pattern in candidates:
@@ -41,22 +33,19 @@ def find_all_followers_files(folder):
     return matches
 
 
-# ---------------------------------------------------------------------------
-# JSON loaders
-# ---------------------------------------------------------------------------
-
 def load_following(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     usernames = {}
     items = data if isinstance(data, list) else data.get("relationships_following", [])
     for item in items:
-        username = item.get("title")
+        username = None
         timestamp = None
         for entry in item.get("string_list_data", []):
             if entry.get("value"):
                 username = entry["value"]
                 timestamp = entry.get("timestamp")
+                break
         if username:
             usernames[username.lower()] = {"username": username, "timestamp": timestamp}
     return usernames
@@ -90,10 +79,6 @@ def load_followers(folder):
     return merged
 
 
-# ---------------------------------------------------------------------------
-# Formatting
-# ---------------------------------------------------------------------------
-
 def format_ts(ts):
     if not ts:
         return ""
@@ -124,10 +109,6 @@ def print_section(title, usernames_dict, show_date=False, color=None):
                 line += f"  [{date}]"
         print(line)
 
-
-# ---------------------------------------------------------------------------
-# Output writers
-# ---------------------------------------------------------------------------
 
 def write_txt(path, title, usernames_dict, show_date=False):
     with open(path, "w", encoding="utf-8") as f:
@@ -191,10 +172,6 @@ def write_csv(path, usernames_dict):
                 "profile_url":   profile_url(info["username"]),
             })
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser(
@@ -273,7 +250,6 @@ def main():
     for label, val in summary:
         print(f"  {label:<26}{val}")
 
-    # --- save files ---------------------------------------------------------
     saved = []
 
     write_txt(
