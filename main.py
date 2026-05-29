@@ -1,23 +1,47 @@
+import argparse
+import csv
+import glob
 import json
 import os
-import glob
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 
 
-def find_file(candidates):
-    """Find the first existing file from a list of candidate names/globs."""
+# ---------------------------------------------------------------------------
+# ANSI colour helpers
+# ---------------------------------------------------------------------------
+
+USE_COLOR = True
+
+RED    = "\033[91m"
+GREEN  = "\033[92m"
+YELLOW = "\033[93m"
+RESET  = "\033[0m"
+
+
+def col(text, code):
+    return f"{code}{text}{RESET}" if USE_COLOR else text
+
+
+# ---------------------------------------------------------------------------
+# File discovery
+# ---------------------------------------------------------------------------
+
+def find_file(folder, candidates):
     for pattern in candidates:
-        matches = glob.glob(pattern)
+        matches = glob.glob(os.path.join(folder, pattern))
         if matches:
             return matches[0]
     return None
 
 
+# ---------------------------------------------------------------------------
+# JSON loaders
+# ---------------------------------------------------------------------------
+
 def load_following(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-
     usernames = {}
     items = data if isinstance(data, list) else data.get("relationships_following", [])
     for item in items:
@@ -28,17 +52,13 @@ def load_following(file_path):
                 username = entry["value"]
                 timestamp = entry.get("timestamp")
         if username:
-            usernames[username.lower()] = {
-                "username": username,
-                "timestamp": timestamp,
-            }
+            usernames[username.lower()] = {"username": username, "timestamp": timestamp}
     return usernames
 
 
 def load_followers(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-
     usernames = {}
     items = data if isinstance(data, list) else []
     for item in items:
@@ -46,25 +66,27 @@ def load_followers(file_path):
             username = entry.get("value")
             timestamp = entry.get("timestamp")
             if username:
-                usernames[username.lower()] = {
-                    "username": username,
-                    "timestamp": timestamp,
-                }
+                usernames[username.lower()] = {"username": username, "timestamp": timestamp}
     return usernames
 
+
+# ---------------------------------------------------------------------------
+# Formatting
+# ---------------------------------------------------------------------------
 
 def format_ts(ts):
     if not ts:
         return ""
     try:
-        return datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
     except (ValueError, OSError):
         return ""
 
 
-def print_section(title, usernames_dict, show_date=False):
+def print_section(title, usernames_dict, show_date=False, color=None):
+    header = f"  {title} ({len(usernames_dict)})"
     print(f"\n{'='*50}")
-    print(f"  {title} ({len(usernames_dict)})")
+    print(col(header, color) if color else header)
     print(f"{'='*50}")
     if not usernames_dict:
         print("  (none)")
@@ -79,13 +101,111 @@ def print_section(title, usernames_dict, show_date=False):
         print(line)
 
 
+# ---------------------------------------------------------------------------
+# Output writers
+# ---------------------------------------------------------------------------
+
+def write_txt(path, title, usernames_dict, show_date=False):
+    with open(path, "w", encoding="utf-8") as f:
+        now = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+        f.write(f"{title} -- {now}\n")
+        f.write("=" * 50 + "\n")
+        if not usernames_dict:
+            f.write("(none)\n")
+            return
+        for key in sorted(usernames_dict):
+            info = usernames_dict[key]
+            line = info["username"]
+            if show_date:
+                date = format_ts(info.get("timestamp"))
+                if date:
+                    line += f"  [{date}]"
+            f.write(line + "\n")
+
+
+def write_combined_report(path, not_following_back, not_followed_back, mutual, summary):
+    now = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"Instagram Follow Report -- {now}\n")
+        f.write("=" * 50 + "\n\n")
+
+        sections = [
+            ("Not following you back", not_following_back, True),
+            ("You don't follow back",  not_followed_back,  True),
+            ("Mutual follows",          mutual,             False),
+        ]
+        for title, data, show_date in sections:
+            f.write(f"\n{title} ({len(data)})\n")
+            f.write("-" * 40 + "\n")
+            if not data:
+                f.write("  (none)\n")
+            else:
+                for key in sorted(data):
+                    info = data[key]
+                    line = info["username"]
+                    if show_date:
+                        date = format_ts(info.get("timestamp"))
+                        if date:
+                            line += f"  [{date}]"
+                    f.write(line + "\n")
+
+        f.write(f"\nSummary\n")
+        f.write("-" * 40 + "\n")
+        for label, val in summary:
+            f.write(f"  {label:<26}{val}\n")
+
+
+def write_csv(path, usernames_dict):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=["username", "followed_since"])
+        writer.writeheader()
+        for key in sorted(usernames_dict):
+            info = usernames_dict[key]
+            writer.writerow({
+                "username":      info["username"],
+                "followed_since": format_ts(info.get("timestamp")),
+            })
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Analyse Instagram follower/following JSON exports."
+    )
+    p.add_argument(
+        "data_dir",
+        nargs="?",
+        default=None,
+        help="Path to the folder containing followers_1.json and following.json "
+             "(defaults to the current working directory)",
+    )
+    p.add_argument(
+        "--no-color",
+        action="store_true",
+        help="Disable ANSI colour in terminal output",
+    )
+    return p.parse_args()
+
+
 def main():
-    followers_path = find_file(["followers_1.json", "followers*.json"])
-    following_path = find_file(["following.json", "following*.json"])
+    global USE_COLOR
+    args = parse_args()
+    if args.no_color:
+        USE_COLOR = False
+
+    folder = args.data_dir if args.data_dir else os.getcwd()
+    if not os.path.isdir(folder):
+        print(f"Error: folder not found: {folder}")
+        sys.exit(1)
+
+    followers_path = find_file(folder, ["followers_1.json", "followers*.json"])
+    following_path = find_file(folder, ["following.json",   "following*.json"])
 
     if not followers_path:
         print("Error: Could not find followers file (expected followers_1.json).")
-        print("Make sure your Instagram data export files are in the same folder as this script.")
         sys.exit(1)
     if not following_path:
         print("Error: Could not find following file (expected following.json).")
@@ -104,33 +224,65 @@ def main():
     not_followed_back  = {k: v for k, v in followers.items() if k not in following}
     mutual             = {k: v for k, v in following.items() if k in followers}
 
-    print_section("Not following you back (you follow them, they don't follow you)",
-                  not_following_back, show_date=True)
-    print_section("You don't follow back (they follow you, you don't follow them)",
-                  not_followed_back, show_date=True)
-    print_section("Mutual follows", mutual)
+    print_section(
+        "Not following you back (you follow them, they don't follow you)",
+        not_following_back, show_date=True, color=RED,
+    )
+    print_section(
+        "You don't follow back (they follow you, you don't follow them)",
+        not_followed_back, show_date=True, color=YELLOW,
+    )
+    print_section("Mutual follows", mutual, color=GREEN)
 
+    summary = [
+        ("Following:",            len(following)),
+        ("Followers:",            len(followers)),
+        ("Mutual:",               len(mutual)),
+        ("Not following back:",   len(not_following_back)),
+        ("You don't follow back:",len(not_followed_back)),
+    ]
     print(f"\n{'='*50}")
     print(f"  Summary")
     print(f"{'='*50}")
-    print(f"  Following:            {len(following)}")
-    print(f"  Followers:            {len(followers)}")
-    print(f"  Mutual:               {len(mutual)}")
-    print(f"  Not following back:   {len(not_following_back)}")
-    print(f"  You don't follow back:{len(not_followed_back)}")
+    for label, val in summary:
+        print(f"  {label:<26}{val}")
 
-    out_path = "not_following_back.txt"
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(f"Not following you back — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC\n")
-        f.write("=" * 50 + "\n")
-        for key in sorted(not_following_back):
-            info = not_following_back[key]
-            date = format_ts(info.get("timestamp"))
-            line = info['username']
-            if date:
-                line += f"  [{date}]"
-            f.write(line + "\n")
-    print(f"\n  Saved to: {out_path}")
+    # --- save files ---------------------------------------------------------
+    saved = []
+
+    write_txt(
+        os.path.join(folder, "not_following_back.txt"),
+        "Not following you back", not_following_back, show_date=True,
+    )
+    saved.append("not_following_back.txt")
+
+    write_txt(
+        os.path.join(folder, "not_followed_back.txt"),
+        "You don't follow back", not_followed_back, show_date=True,
+    )
+    saved.append("not_followed_back.txt")
+
+    write_txt(
+        os.path.join(folder, "mutual.txt"),
+        "Mutual follows", mutual,
+    )
+    saved.append("mutual.txt")
+
+    write_combined_report(
+        os.path.join(folder, "report.txt"),
+        not_following_back, not_followed_back, mutual, summary,
+    )
+    saved.append("report.txt")
+
+    write_csv(
+        os.path.join(folder, "not_following_back.csv"),
+        not_following_back,
+    )
+    saved.append("not_following_back.csv")
+
+    print(f"\n  Saved to {folder}/")
+    for name in saved:
+        print(f"    {name}")
 
 
 if __name__ == "__main__":
