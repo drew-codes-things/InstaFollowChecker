@@ -35,6 +35,12 @@ def find_file(folder, candidates):
     return None
 
 
+def find_all_followers_files(folder):
+    """Return every followers_*.json file sorted by filename."""
+    matches = sorted(glob.glob(os.path.join(folder, "followers_*.json")))
+    return matches
+
+
 # ---------------------------------------------------------------------------
 # JSON loaders
 # ---------------------------------------------------------------------------
@@ -56,7 +62,8 @@ def load_following(file_path):
     return usernames
 
 
-def load_followers(file_path):
+def load_followers_from_file(file_path):
+    """Load followers from a single followers_N.json file."""
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     usernames = {}
@@ -70,6 +77,19 @@ def load_followers(file_path):
     return usernames
 
 
+def load_followers(folder):
+    """Merge all followers_*.json files found in folder."""
+    files = find_all_followers_files(folder)
+    if not files:
+        return {}
+    merged = {}
+    for path in files:
+        merged.update(load_followers_from_file(path))
+    if len(files) > 1:
+        print(f"  Merged {len(files)} followers files: {', '.join(os.path.basename(p) for p in files)}")
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Formatting
 # ---------------------------------------------------------------------------
@@ -81,6 +101,10 @@ def format_ts(ts):
         return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
     except (ValueError, OSError):
         return ""
+
+
+def profile_url(username):
+    return f"https://www.instagram.com/{username}/"
 
 
 def print_section(title, usernames_dict, show_date=False, color=None):
@@ -157,13 +181,14 @@ def write_combined_report(path, not_following_back, not_followed_back, mutual, s
 
 def write_csv(path, usernames_dict):
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["username", "followed_since"])
+        writer = csv.DictWriter(f, fieldnames=["username", "followed_since", "profile_url"])
         writer.writeheader()
         for key in sorted(usernames_dict):
             info = usernames_dict[key]
             writer.writerow({
                 "username":      info["username"],
                 "followed_since": format_ts(info.get("timestamp")),
+                "profile_url":   profile_url(info["username"]),
             })
 
 
@@ -179,8 +204,8 @@ def parse_args():
         "data_dir",
         nargs="?",
         default=None,
-        help="Path to the folder containing followers_1.json and following.json "
-             "(defaults to the current working directory)",
+        help="Path to the folder containing followers_1.json (and any followers_2.json etc.) "
+             "and following.json (defaults to the current working directory)",
     )
     p.add_argument(
         "--no-color",
@@ -201,20 +226,21 @@ def main():
         print(f"Error: folder not found: {folder}")
         sys.exit(1)
 
-    followers_path = find_file(folder, ["followers_1.json", "followers*.json"])
-    following_path = find_file(folder, ["following.json",   "following*.json"])
+    followers_files = find_all_followers_files(folder)
+    following_path  = find_file(folder, ["following.json", "following*.json"])
 
-    if not followers_path:
-        print("Error: Could not find followers file (expected followers_1.json).")
+    if not followers_files:
+        print("Error: Could not find any followers file (expected followers_1.json, followers_2.json, etc.).")
         sys.exit(1)
     if not following_path:
         print("Error: Could not find following file (expected following.json).")
         sys.exit(1)
 
-    print(f"Loading: {followers_path}  +  {following_path}")
+    print(f"Loading followers from: {', '.join(os.path.basename(p) for p in followers_files)}")
+    print(f"Loading following from: {os.path.basename(following_path)}")
 
     try:
-        followers = load_followers(followers_path)
+        followers = load_followers(folder)
         following = load_following(following_path)
     except (json.JSONDecodeError, KeyError) as e:
         print(f"Error parsing JSON: {e}")
