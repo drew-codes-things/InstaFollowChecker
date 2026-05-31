@@ -36,9 +36,42 @@ def find_all_followers_files(folder):
 def load_following(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+
+    def _extract_items(payload):
+        if isinstance(payload, list):
+            return payload
+        if not isinstance(payload, dict):
+            return []
+
+        preferred_keys = (
+            "relationships_following",
+            "following",
+            "relationships",
+            "data",
+        )
+        for key in preferred_keys:
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+            if isinstance(value, dict):
+                nested = value.get("relationships_following")
+                if isinstance(nested, list):
+                    return nested
+
+        # Fallback: find the first list-shaped value that looks like IG entries.
+        for value in payload.values():
+            if isinstance(value, list):
+                if not value:
+                    return value
+                if isinstance(value[0], dict):
+                    return value
+        return []
+
     usernames = {}
-    items = data if isinstance(data, list) else data.get("relationships_following", [])
+    items = _extract_items(data)
     for item in items:
+        if not isinstance(item, dict):
+            continue
         username = None
         timestamp = None
         for entry in item.get("string_list_data", []):
