@@ -58,7 +58,6 @@ def load_following(file_path):
                 if isinstance(nested, list):
                     return nested
 
-        # Fallback: find the first list-shaped value that looks like IG entries.
         for value in payload.values():
             if isinstance(value, list):
                 if not value:
