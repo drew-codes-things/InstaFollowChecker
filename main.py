@@ -9,10 +9,10 @@ from datetime import datetime, timezone
 
 USE_COLOR = True
 
-RED    = "\033[91m"
-GREEN  = "\033[92m"
+RED = "\033[91m"
+GREEN = "\033[92m"
 YELLOW = "\033[93m"
-RESET  = "\033[0m"
+RESET = "\033[0m"
 
 
 def col(text, code):
@@ -21,85 +21,69 @@ def col(text, code):
 
 def find_file(folder, candidates):
     for pattern in candidates:
-        matches = glob.glob(os.path.join(folder, pattern))
-        if matches:
-            return matches[0]
+        direct_matches = glob.glob(os.path.join(folder, pattern))
+        if direct_matches:
+            return direct_matches[0]
+        recursive_matches = glob.glob(os.path.join(folder, "**", pattern), recursive=True)
+        if recursive_matches:
+            return recursive_matches[0]
     return None
 
 
 def find_all_followers_files(folder):
-    """Return every followers_*.json file sorted by filename."""
-    matches = sorted(glob.glob(os.path.join(folder, "followers_*.json")))
+    direct = glob.glob(os.path.join(folder, "followers_*.json"))
+    recursive = glob.glob(os.path.join(folder, "**", "followers_*.json"), recursive=True)
+    matches = sorted(set(direct + recursive))
     return matches
+
+
+def iter_string_list_data_entries(payload):
+    """Recursively yield dict entries that contain Instagram string_list_data."""
+    if isinstance(payload, list):
+        for item in payload:
+            yield from iter_string_list_data_entries(item)
+        return
+
+    if not isinstance(payload, dict):
+        return
+
+    sld = payload.get("string_list_data")
+    if isinstance(sld, list) and sld:
+        for entry in sld:
+            if isinstance(entry, dict):
+                yield entry
+
+    for value in payload.values():
+        yield from iter_string_list_data_entries(value)
+
+
+def entries_to_user_map(entries):
+    users = {}
+    for entry in entries:
+        username = entry.get("value")
+        timestamp = entry.get("timestamp")
+        if not username:
+            continue
+        users[username.lower()] = {
+            "username": username,
+            "timestamp": timestamp,
+        }
+    return users
 
 
 def load_following(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-
-    def _extract_items(payload):
-        if isinstance(payload, list):
-            return payload
-        if not isinstance(payload, dict):
-            return []
-
-        preferred_keys = (
-            "relationships_following",
-            "following",
-            "relationships",
-            "data",
-        )
-        for key in preferred_keys:
-            value = payload.get(key)
-            if isinstance(value, list):
-                return value
-            if isinstance(value, dict):
-                nested = value.get("relationships_following")
-                if isinstance(nested, list):
-                    return nested
-
-        for value in payload.values():
-            if isinstance(value, list):
-                if not value:
-                    return value
-                if isinstance(value[0], dict):
-                    return value
-        return []
-
-    usernames = {}
-    items = _extract_items(data)
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        username = None
-        timestamp = None
-        for entry in item.get("string_list_data", []):
-            if entry.get("value"):
-                username = entry["value"]
-                timestamp = entry.get("timestamp")
-                break
-        if username:
-            usernames[username.lower()] = {"username": username, "timestamp": timestamp}
-    return usernames
+    return entries_to_user_map(iter_string_list_data_entries(data))
 
 
 def load_followers_from_file(file_path):
-    """Load followers from a single followers_N.json file."""
     with open(file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    usernames = {}
-    items = data if isinstance(data, list) else []
-    for item in items:
-        for entry in item.get("string_list_data", []):
-            username = entry.get("value")
-            timestamp = entry.get("timestamp")
-            if username:
-                usernames[username.lower()] = {"username": username, "timestamp": timestamp}
-    return usernames
+    return entries_to_user_map(iter_string_list_data_entries(data))
 
 
 def load_followers(folder):
-    """Merge all followers_*.json files found in folder."""
     files = find_all_followers_files(folder)
     if not files:
         return {}
@@ -116,7 +100,7 @@ def format_ts(ts):
         return ""
     try:
         return datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
-    except (ValueError, OSError):
+    except (ValueError, OSError, TypeError):
         return ""
 
 
@@ -168,8 +152,8 @@ def write_combined_report(path, not_following_back, not_followed_back, mutual, s
 
         sections = [
             ("Not following you back", not_following_back, True),
-            ("You don't follow back",  not_followed_back,  True),
-            ("Mutual follows",          mutual,             False),
+            ("You don't follow back", not_followed_back, True),
+            ("Mutual follows", mutual, False),
         ]
         for title, data, show_date in sections:
             f.write(f"\n{title} ({len(data)})\n")
@@ -186,7 +170,7 @@ def write_combined_report(path, not_following_back, not_followed_back, mutual, s
                             line += f"  [{date}]"
                     f.write(line + "\n")
 
-        f.write(f"\nSummary\n")
+        f.write("\nSummary\n")
         f.write("-" * 40 + "\n")
         for label, val in summary:
             f.write(f"  {label:<26}{val}\n")
@@ -199,9 +183,9 @@ def write_csv(path, usernames_dict):
         for key in sorted(usernames_dict):
             info = usernames_dict[key]
             writer.writerow({
-                "username":      info["username"],
+                "username": info["username"],
                 "followed_since": format_ts(info.get("timestamp")),
-                "profile_url":   profile_url(info["username"]),
+                "profile_url": profile_url(info["username"]),
             })
 
 
@@ -213,8 +197,10 @@ def parse_args():
         "data_dir",
         nargs="?",
         default=None,
-        help="Path to the folder containing followers_1.json (and any followers_2.json etc.) "
-             "and following.json (defaults to the current working directory)",
+        help=(
+            "Path to the folder containing followers/following export files "
+            "(defaults to the current working directory)"
+        ),
     )
     p.add_argument(
         "--no-color",
@@ -236,7 +222,7 @@ def main():
         sys.exit(1)
 
     followers_files = find_all_followers_files(folder)
-    following_path  = find_file(folder, ["following.json", "following*.json"])
+    following_path = find_file(folder, ["following.json", "following_*.json", "following*.json"])
 
     if not followers_files:
         print("Error: Could not find any followers file (expected followers_1.json, followers_2.json, etc.).")
@@ -256,8 +242,8 @@ def main():
         sys.exit(1)
 
     not_following_back = {k: v for k, v in following.items() if k not in followers}
-    not_followed_back  = {k: v for k, v in followers.items() if k not in following}
-    mutual             = {k: v for k, v in following.items() if k in followers}
+    not_followed_back = {k: v for k, v in followers.items() if k not in following}
+    mutual = {k: v for k, v in following.items() if k in followers}
 
     print_section(
         "Not following you back (you follow them, they don't follow you)",
@@ -270,14 +256,14 @@ def main():
     print_section("Mutual follows", mutual, color=GREEN)
 
     summary = [
-        ("Following:",            len(following)),
-        ("Followers:",            len(followers)),
-        ("Mutual:",               len(mutual)),
-        ("Not following back:",   len(not_following_back)),
-        ("You don't follow back:",len(not_followed_back)),
+        ("Following:", len(following)),
+        ("Followers:", len(followers)),
+        ("Mutual:", len(mutual)),
+        ("Not following back:", len(not_following_back)),
+        ("You don't follow back:", len(not_followed_back)),
     ]
     print(f"\n{'='*50}")
-    print(f"  Summary")
+    print("  Summary")
     print(f"{'='*50}")
     for label, val in summary:
         print(f"  {label:<26}{val}")
